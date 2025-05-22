@@ -14,10 +14,10 @@ import (
 
 // Request represents a JSON-RPC request
 type Request struct {
-	JSONRPC string      `json:"jsonrpc"`
-	ID      string      `json:"id"`
-	Method  string      `json:"method"`
-	Params  interface{} `json:"params"`
+	JSONRPC string `json:"jsonrpc"`
+	ID      string `json:"id"`
+	Method  string `json:"method"`
+	Params  any    `json:"params"`
 }
 
 // Response represents a JSON-RPC response
@@ -218,7 +218,7 @@ func showUsage() {
 
 func createLokiQueryRequest(url, query, start, end string, limit float64) Request {
 	// Create arguments map
-	args := map[string]interface{}{
+	args := map[string]any{
 		"query": query,
 	}
 
@@ -244,7 +244,7 @@ func createLokiQueryRequest(url, query, start, end string, limit float64) Reques
 		JSONRPC: "2.0",
 		ID:      "1",
 		Method:  "tools/call",
-		Params: map[string]interface{}{
+		Params: map[string]any{
 			"name":      "loki_query",
 			"arguments": args,
 		},

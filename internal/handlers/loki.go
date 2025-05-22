@@ -36,10 +36,10 @@ type LokiEntry struct {
 
 // SSEEvent represents an event to be sent via SSE
 type SSEEvent struct {
-	Type      string      `json:"type"`
-	Query     string      `json:"query"`
-	Timestamp string      `json:"timestamp"`
-	Results   interface{} `json:"results"`
+	Type      string `json:"type"`
+	Query     string `json:"query"`
+	Timestamp string `json:"timestamp"`
+	Results   any    `json:"results"`
 }
 
 // Environment variable name for Loki URL
@@ -291,7 +291,7 @@ func executeLokiQuery(ctx context.Context, queryURL string, username, password, 
 
 	// Check for Loki errors
 	if result.Status == "error" {
-		return nil, fmt.Errorf("Loki error: %s", result.Error)
+		return nil, fmt.Errorf("loki error: %s", result.Error)
 	}
 
 	return &result, nil
