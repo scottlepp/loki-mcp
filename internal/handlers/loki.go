@@ -93,11 +93,12 @@ func NewLokiQueryTool() mcp.Tool {
 // HandleLokiQuery handles Loki query tool requests
 func HandleLokiQuery(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	// Extract parameters
-	queryString := request.Params.Arguments["query"].(string)
+	args := request.GetArguments()
+	queryString := args["query"].(string)
 
 	// Get Loki URL from request arguments, if not present check environment
 	var lokiURL string
-	if urlArg, ok := request.Params.Arguments["url"].(string); ok && urlArg != "" {
+	if urlArg, ok := args["url"].(string); ok && urlArg != "" {
 		lokiURL = urlArg
 	} else {
 		// Fallback to environment variable
@@ -109,16 +110,16 @@ func HandleLokiQuery(ctx context.Context, request mcp.CallToolRequest) (*mcp.Cal
 
 	// Extract authentication parameters
 	var username, password, token, orgID string
-	if usernameArg, ok := request.Params.Arguments["username"].(string); ok {
+	if usernameArg, ok := args["username"].(string); ok {
 		username = usernameArg
 	}
-	if passwordArg, ok := request.Params.Arguments["password"].(string); ok {
+	if passwordArg, ok := args["password"].(string); ok {
 		password = passwordArg
 	}
-	if tokenArg, ok := request.Params.Arguments["token"].(string); ok {
+	if tokenArg, ok := args["token"].(string); ok {
 		token = tokenArg
 	}
-	if orgIDArg, ok := request.Params.Arguments["org"].(string); ok {
+	if orgIDArg, ok := args["org"].(string); ok {
 		orgID = orgIDArg
 	}
 
@@ -128,7 +129,7 @@ func HandleLokiQuery(ctx context.Context, request mcp.CallToolRequest) (*mcp.Cal
 	limit := 100
 
 	// Override defaults if parameters are provided
-	if startStr, ok := request.Params.Arguments["start"].(string); ok && startStr != "" {
+	if startStr, ok := args["start"].(string); ok && startStr != "" {
 		startTime, err := parseTime(startStr)
 		if err != nil {
 			return nil, fmt.Errorf("invalid start time: %v", err)
@@ -136,7 +137,7 @@ func HandleLokiQuery(ctx context.Context, request mcp.CallToolRequest) (*mcp.Cal
 		start = startTime.Unix()
 	}
 
-	if endStr, ok := request.Params.Arguments["end"].(string); ok && endStr != "" {
+	if endStr, ok := args["end"].(string); ok && endStr != "" {
 		endTime, err := parseTime(endStr)
 		if err != nil {
 			return nil, fmt.Errorf("invalid end time: %v", err)
@@ -144,7 +145,7 @@ func HandleLokiQuery(ctx context.Context, request mcp.CallToolRequest) (*mcp.Cal
 		end = endTime.Unix()
 	}
 
-	if limitVal, ok := request.Params.Arguments["limit"].(float64); ok {
+	if limitVal, ok := args["limit"].(float64); ok {
 		limit = int(limitVal)
 	}
 
