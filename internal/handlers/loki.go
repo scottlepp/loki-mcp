@@ -45,6 +45,18 @@ type SSEEvent struct {
 // Environment variable name for Loki URL
 const EnvLokiURL = "LOKI_URL"
 
+// Environment variable name for Loki Organization ID
+const EnvLokiOrgID = "LOKI_ORG_ID"
+
+// Environment variable name for Loki Username
+const EnvLokiUsername = "LOKI_USERNAME"
+
+// Environment variable name for Loki Password
+const EnvLokiPassword = "LOKI_PASSWORD"
+
+// Environment variable name for Loki Token
+const EnvLokiToken = "LOKI_TOKEN"
+
 // Default Loki URL when environment variable is not set
 const DefaultLokiURL = "http://localhost:3100"
 
@@ -55,6 +67,14 @@ func NewLokiQueryTool() mcp.Tool {
 	if lokiURL == "" {
 		lokiURL = DefaultLokiURL
 	}
+
+	// Get Loki Org ID from environment variable if set
+	orgID := os.Getenv(EnvLokiOrgID)
+
+	// Get authentication parameters from environment variables if set
+	username := os.Getenv(EnvLokiUsername)
+	password := os.Getenv(EnvLokiPassword)
+	token := os.Getenv(EnvLokiToken)
 
 	return mcp.NewTool("loki_query",
 		mcp.WithDescription("Run a query against Grafana Loki"),
@@ -67,13 +87,13 @@ func NewLokiQueryTool() mcp.Tool {
 			mcp.DefaultString(lokiURL),
 		),
 		mcp.WithString("username",
-			mcp.Description("Username for basic authentication"),
+			mcp.Description(fmt.Sprintf("Username for basic authentication (default: %s from %s env var)", username, EnvLokiUsername)),
 		),
 		mcp.WithString("password",
-			mcp.Description("Password for basic authentication"),
+			mcp.Description(fmt.Sprintf("Password for basic authentication (default: %s from %s env var)", password, EnvLokiPassword)),
 		),
 		mcp.WithString("token",
-			mcp.Description("Bearer token for authentication"),
+			mcp.Description(fmt.Sprintf("Bearer token for authentication (default: %s from %s env var)", token, EnvLokiToken)),
 		),
 		mcp.WithString("start",
 			mcp.Description("Start time for the query (default: 1h ago)"),
@@ -85,7 +105,7 @@ func NewLokiQueryTool() mcp.Tool {
 			mcp.Description("Maximum number of entries to return (default: 100)"),
 		),
 		mcp.WithString("org",
-			mcp.Description("Organization ID for the query"),
+			mcp.Description(fmt.Sprintf("Organization ID for the query (default: %s from %s env var)", orgID, EnvLokiOrgID)),
 		),
 	)
 }
@@ -110,17 +130,29 @@ func HandleLokiQuery(ctx context.Context, request mcp.CallToolRequest) (*mcp.Cal
 
 	// Extract authentication parameters
 	var username, password, token, orgID string
-	if usernameArg, ok := args["username"].(string); ok {
+	if usernameArg, ok := args["username"].(string); ok && usernameArg != "" {
 		username = usernameArg
+	} else {
+		// Fallback to environment variable
+		username = os.Getenv(EnvLokiUsername)
 	}
-	if passwordArg, ok := args["password"].(string); ok {
+	if passwordArg, ok := args["password"].(string); ok && passwordArg != "" {
 		password = passwordArg
+	} else {
+		// Fallback to environment variable
+		password = os.Getenv(EnvLokiPassword)
 	}
-	if tokenArg, ok := args["token"].(string); ok {
+	if tokenArg, ok := args["token"].(string); ok && tokenArg != "" {
 		token = tokenArg
+	} else {
+		// Fallback to environment variable
+		token = os.Getenv(EnvLokiToken)
 	}
-	if orgIDArg, ok := args["org"].(string); ok {
+	if orgIDArg, ok := args["org"].(string); ok && orgIDArg != "" {
 		orgID = orgIDArg
+	} else {
+		// Fallback to environment variable
+		orgID = os.Getenv(EnvLokiOrgID)
 	}
 
 	// Set defaults for optional parameters
