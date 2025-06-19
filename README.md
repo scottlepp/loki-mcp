@@ -61,6 +61,7 @@ The `loki_query` tool allows you to query Grafana Loki log data:
   - `start`: Start time for the query (default: 1h ago)
   - `end`: End time for the query (default: now)
   - `limit`: Maximum number of entries to return (default: 100)
+  - `org`: Organization ID for the query (sent as X-Scope-OrgID header)
 
 #### Environment Variables
 
@@ -83,6 +84,9 @@ go build -o loki-mcp-client ./cmd/client
 # Using environment variable:
 export LOKI_URL="http://localhost:3100"
 ./loki-mcp-client loki_query "{job=\"varlogs\"}"
+
+# Using org for multi-tenant setups:
+./loki-mcp-client loki_query "{job=\"varlogs\"}" "" "" "" "" "" "tenant-123"
 ```
 
 ## Docker Support
@@ -283,6 +287,34 @@ Make sure to replace `path/to/loki-mcp-server` with the absolute path to the bui
      - "Query Loki for logs with the query {job=\"varlogs\"}"
      - "Find error logs from the last hour in Loki using query {job=\"varlogs\"} |= \"ERROR\""
      - "Show me the most recent 50 logs from Loki with job=varlogs"
+     - "Query Loki for logs with org 'tenant-123' using query {job=\"varlogs\"}"
+
+### Using Organization ID in Natural Language Prompts
+
+When using this MCP server with Claude Desktop or other AI assistants, users can naturally mention the organization ID in their prompts in several ways:
+
+#### Direct Organization Reference
+- **"Query Loki for logs from organization 'tenant-123' with the query {job=\"varlogs\"}"**
+- **"Search Loki logs for org 'production-env' using {job=\"web\"}"**
+- **"Get logs from organization ID 'client-abc' matching {service=\"api\"}"**
+
+#### Contextual Organization Mentions
+- **"Check the error logs for our production tenant (org: prod-001) using query {level=\"error\"}"**
+- **"Find all logs from customer organization 'customer-xyz' for the last hour"**
+- **"Query Loki with org tenant-456 to find logs matching {job=\"backend\"}"**
+
+#### Multi-tenant Scenarios
+- **"Switch to organization 'dev-team' and query {job=\"logs\"} for debugging"**
+- **"Use org 'staging-env' to search for warning logs in the last 2 hours"**
+- **"Search logs in tenant 'qa-environment' for any error messages"**
+
+#### Combined with Other Parameters
+- **"Query Loki for organization 'prod-cluster' from 2 hours ago to now with limit 50"**
+- **"Get the last 100 logs from org 'microservice-team' for query {app=\"payment\"}"**
+
+When you mention any of these natural language prompts, the AI assistant will automatically map terms like "organization", "org", "tenant", or "organization ID" to the `org` parameter in the Loki query tool, which gets sent as the `X-Scope-OrgID` header to your Loki server for proper multi-tenant filtering.
+
+The key is to naturally mention the organization identifier in your request - the AI will understand that this should be passed as the `org` parameter to the Loki query tool.
 
 ## Using with Cursor
 

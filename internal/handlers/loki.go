@@ -84,17 +84,21 @@ func NewLokiQueryTool() mcp.Tool {
 		mcp.WithNumber("limit",
 			mcp.Description("Maximum number of entries to return (default: 100)"),
 		),
+		mcp.WithString("org",
+			mcp.Description("Organization ID for the query"),
+		),
 	)
 }
 
 // HandleLokiQuery handles Loki query tool requests
 func HandleLokiQuery(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	// Extract parameters
-	queryString := request.Params.Arguments["query"].(string)
+	args := request.GetArguments()
+	queryString := args["query"].(string)
 
 	// Get Loki URL from request arguments, if not present check environment
 	var lokiURL string
-	if urlArg, ok := request.Params.Arguments["url"].(string); ok && urlArg != "" {
+	if urlArg, ok := args["url"].(string); ok && urlArg != "" {
 		lokiURL = urlArg
 	} else {
 		// Fallback to environment variable
@@ -105,15 +109,18 @@ func HandleLokiQuery(ctx context.Context, request mcp.CallToolRequest) (*mcp.Cal
 	}
 
 	// Extract authentication parameters
-	var username, password, token string
-	if usernameArg, ok := request.Params.Arguments["username"].(string); ok {
+	var username, password, token, orgID string
+	if usernameArg, ok := args["username"].(string); ok {
 		username = usernameArg
 	}
-	if passwordArg, ok := request.Params.Arguments["password"].(string); ok {
+	if passwordArg, ok := args["password"].(string); ok {
 		password = passwordArg
 	}
-	if tokenArg, ok := request.Params.Arguments["token"].(string); ok {
+	if tokenArg, ok := args["token"].(string); ok {
 		token = tokenArg
+	}
+	if orgIDArg, ok := args["org"].(string); ok {
+		orgID = orgIDArg
 	}
 
 	// Set defaults for optional parameters
@@ -122,7 +129,7 @@ func HandleLokiQuery(ctx context.Context, request mcp.CallToolRequest) (*mcp.Cal
 	limit := 100
 
 	// Override defaults if parameters are provided
-	if startStr, ok := request.Params.Arguments["start"].(string); ok && startStr != "" {
+	if startStr, ok := args["start"].(string); ok && startStr != "" {
 		startTime, err := parseTime(startStr)
 		if err != nil {
 			return nil, fmt.Errorf("invalid start time: %v", err)
@@ -130,7 +137,7 @@ func HandleLokiQuery(ctx context.Context, request mcp.CallToolRequest) (*mcp.Cal
 		start = startTime.Unix()
 	}
 
-	if endStr, ok := request.Params.Arguments["end"].(string); ok && endStr != "" {
+	if endStr, ok := args["end"].(string); ok && endStr != "" {
 		endTime, err := parseTime(endStr)
 		if err != nil {
 			return nil, fmt.Errorf("invalid end time: %v", err)
@@ -138,7 +145,7 @@ func HandleLokiQuery(ctx context.Context, request mcp.CallToolRequest) (*mcp.Cal
 		end = endTime.Unix()
 	}
 
-	if limitVal, ok := request.Params.Arguments["limit"].(float64); ok {
+	if limitVal, ok := args["limit"].(float64); ok {
 		limit = int(limitVal)
 	}
 
@@ -149,7 +156,7 @@ func HandleLokiQuery(ctx context.Context, request mcp.CallToolRequest) (*mcp.Cal
 	}
 
 	// Execute query with authentication
-	result, err := executeLokiQuery(ctx, queryURL, username, password, token)
+	result, err := executeLokiQuery(ctx, queryURL, username, password, token, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("query execution failed: %v", err)
 	}
@@ -246,7 +253,7 @@ func buildLokiQueryURL(baseURL, query string, start, end int64, limit int) (stri
 }
 
 // executeLokiQuery sends the HTTP request to Loki
-func executeLokiQuery(ctx context.Context, queryURL string, username, password, token string) (*LokiResult, error) {
+func executeLokiQuery(ctx context.Context, queryURL string, username, password, token, orgID string) (*LokiResult, error) {
 	// Create HTTP request
 	req, err := http.NewRequestWithContext(ctx, "GET", queryURL, nil)
 	if err != nil {
@@ -260,6 +267,11 @@ func executeLokiQuery(ctx context.Context, queryURL string, username, password, 
 	} else if username != "" || password != "" {
 		// Basic authentication
 		req.SetBasicAuth(username, password)
+	}
+
+	// Add orgid if provided
+	if orgID != "" {
+		req.Header.Add("X-Scope-OrgID", orgID)
 	}
 
 	// Execute request

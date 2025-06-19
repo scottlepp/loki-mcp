@@ -91,9 +91,8 @@ func main() {
 			os.Exit(1)
 		}
 
-		var lokiURL, query, start, end string
+		var lokiURL, query, start, end, org string
 		var limit float64
-
 		// Check if the first argument is a URL or a query
 		if strings.HasPrefix(os.Args[2], "http") {
 			// First arg is URL, second is query
@@ -121,6 +120,10 @@ func main() {
 				}
 				limit = limitVal
 			}
+
+			if len(os.Args) > argOffset+3 {
+				org = os.Args[argOffset+3]
+			}
 		} else {
 			// First arg is the query (URL comes from environment)
 			query = os.Args[2]
@@ -142,10 +145,14 @@ func main() {
 				}
 				limit = limitVal
 			}
+
+			if len(os.Args) > argOffset+3 {
+				org = os.Args[argOffset+3]
+			}
 		}
 
 		// Create the Loki query request
-		req = createLokiQueryRequest(lokiURL, query, start, end, limit)
+		req = createLokiQueryRequest(lokiURL, query, start, end, limit, org)
 
 	default:
 		showUsage()
@@ -214,9 +221,10 @@ func showUsage() {
 	fmt.Println("      client loki_query \"{job=\\\"varlogs\\\"}\"")
 	fmt.Println("      client loki_query http://localhost:3100 \"{job=\\\"varlogs\\\"}\"")
 	fmt.Println("      client loki_query \"{job=\\\"varlogs\\\"}\" \"-1h\" \"now\" 100")
+	fmt.Println("      client loki_query \"{job=\\\"varlogs\\\"}\" \"-1h\" \"now\" 100 \"tenant-123\"")
 }
 
-func createLokiQueryRequest(url, query, start, end string, limit float64) Request {
+func createLokiQueryRequest(url, query, start, end string, limit float64, org string) Request {
 	// Create arguments map
 	args := map[string]any{
 		"query": query,
@@ -238,6 +246,10 @@ func createLokiQueryRequest(url, query, start, end string, limit float64) Reques
 
 	if limit > 0 {
 		args["limit"] = limit
+	}
+
+	if org != "" {
+		args["org"] = org
 	}
 
 	return Request{
