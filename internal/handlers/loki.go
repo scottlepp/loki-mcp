@@ -84,6 +84,9 @@ func NewLokiQueryTool() mcp.Tool {
 		mcp.WithNumber("limit",
 			mcp.Description("Maximum number of entries to return (default: 100)"),
 		),
+		mcp.WithString("org",
+			mcp.Description("Organization ID for the query"),
+		),
 	)
 }
 
@@ -105,7 +108,7 @@ func HandleLokiQuery(ctx context.Context, request mcp.CallToolRequest) (*mcp.Cal
 	}
 
 	// Extract authentication parameters
-	var username, password, token string
+	var username, password, token, orgID string
 	if usernameArg, ok := request.Params.Arguments["username"].(string); ok {
 		username = usernameArg
 	}
@@ -114,6 +117,9 @@ func HandleLokiQuery(ctx context.Context, request mcp.CallToolRequest) (*mcp.Cal
 	}
 	if tokenArg, ok := request.Params.Arguments["token"].(string); ok {
 		token = tokenArg
+	}
+	if orgIDArg, ok := request.Params.Arguments["org"].(string); ok {
+		orgID = orgIDArg
 	}
 
 	// Set defaults for optional parameters
@@ -149,7 +155,7 @@ func HandleLokiQuery(ctx context.Context, request mcp.CallToolRequest) (*mcp.Cal
 	}
 
 	// Execute query with authentication
-	result, err := executeLokiQuery(ctx, queryURL, username, password, token)
+	result, err := executeLokiQuery(ctx, queryURL, username, password, token, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("query execution failed: %v", err)
 	}
@@ -246,7 +252,7 @@ func buildLokiQueryURL(baseURL, query string, start, end int64, limit int) (stri
 }
 
 // executeLokiQuery sends the HTTP request to Loki
-func executeLokiQuery(ctx context.Context, queryURL string, username, password, token string) (*LokiResult, error) {
+func executeLokiQuery(ctx context.Context, queryURL string, username, password, token, orgID string) (*LokiResult, error) {
 	// Create HTTP request
 	req, err := http.NewRequestWithContext(ctx, "GET", queryURL, nil)
 	if err != nil {
@@ -260,6 +266,11 @@ func executeLokiQuery(ctx context.Context, queryURL string, username, password, 
 	} else if username != "" || password != "" {
 		// Basic authentication
 		req.SetBasicAuth(username, password)
+	}
+
+	// Add orgid if provided
+	if orgID != "" {
+		req.Header.Add("X-Scope-OrgID", orgID)
 	}
 
 	// Execute request
