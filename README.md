@@ -68,6 +68,12 @@ The `loki_query` tool allows you to query Grafana Loki log data:
 The Loki query tool supports the following environment variables:
 
 - `LOKI_URL`: Default Loki server URL to use if not specified in the request
+- `LOKI_ORG_ID`: Default organization ID to use if not specified in the request
+- `LOKI_USERNAME`: Default username for basic authentication if not specified in the request
+- `LOKI_PASSWORD`: Default password for basic authentication if not specified in the request
+- `LOKI_TOKEN`: Default bearer token for authentication if not specified in the request
+
+**Security Note**: When using authentication environment variables, be careful not to expose sensitive credentials in logs or configuration files. Consider using token-based authentication over username/password when possible.
 
 ### Testing the MCP Server
 
@@ -81,11 +87,34 @@ go build -o loki-mcp-client ./cmd/client
 ./loki-mcp-client loki_query "{job=\"varlogs\"}"
 ./loki-mcp-client loki_query "{job=\"varlogs\"}" "-1h" "now" 100
 
-# Using environment variable:
+# Using environment variables:
 export LOKI_URL="http://localhost:3100"
 ./loki-mcp-client loki_query "{job=\"varlogs\"}"
 
-# Using org for multi-tenant setups:
+# Using environment variables for both URL and org:
+export LOKI_URL="http://localhost:3100"
+export LOKI_ORG_ID="tenant-123"
+./loki-mcp-client loki_query "{job=\"varlogs\"}"
+
+# Using environment variables for authentication:
+export LOKI_URL="http://localhost:3100"
+export LOKI_USERNAME="admin"
+export LOKI_PASSWORD="password"
+./loki-mcp-client loki_query "{job=\"varlogs\"}"
+
+# Using environment variables with bearer token:
+export LOKI_URL="http://localhost:3100"
+export LOKI_TOKEN="your-bearer-token"
+./loki-mcp-client loki_query "{job=\"varlogs\"}"
+
+# Using all environment variables together:
+export LOKI_URL="http://localhost:3100"
+export LOKI_ORG_ID="tenant-123"
+export LOKI_USERNAME="admin"
+export LOKI_PASSWORD="password"
+./loki-mcp-client loki_query "{job=\"varlogs\"}"
+
+# Using org parameter for multi-tenant setups:
 ./loki-mcp-client loki_query "{job=\"varlogs\"}" "" "" "" "" "" "tenant-123"
 ```
 
@@ -269,7 +298,11 @@ Or create your own configuration:
       "command": "path/to/loki-mcp-server",
       "args": [],
       "env": {
-        "LOKI_URL": "http://localhost:3100"
+        "LOKI_URL": "http://localhost:3100",
+        "LOKI_ORG_ID": "your-default-org-id",
+        "LOKI_USERNAME": "your-username",
+        "LOKI_PASSWORD": "your-password",
+        "LOKI_TOKEN": "your-bearer-token"
       },
       "disabled": false,
       "autoApprove": ["loki_query"]
@@ -314,7 +347,13 @@ When using this MCP server with Claude Desktop or other AI assistants, users can
 
 When you mention any of these natural language prompts, the AI assistant will automatically map terms like "organization", "org", "tenant", or "organization ID" to the `org` parameter in the Loki query tool, which gets sent as the `X-Scope-OrgID` header to your Loki server for proper multi-tenant filtering.
 
-The key is to naturally mention the organization identifier in your request - the AI will understand that this should be passed as the `org` parameter to the Loki query tool.
+The key is to naturally mention any specific parameters in your request - the AI will understand how to map them to the appropriate Loki query tool parameters. When parameters are not explicitly mentioned, the system will automatically use defaults from environment variables:
+- `LOKI_URL` for the Loki server URL
+- `LOKI_ORG_ID` for the organization ID  
+- `LOKI_USERNAME` and `LOKI_PASSWORD` for basic authentication
+- `LOKI_TOKEN` for bearer token authentication
+
+This makes it very convenient to set up default connection parameters once and then use natural language queries without having to specify authentication details every time.
 
 ## Using with Cursor
 
@@ -327,7 +366,13 @@ Docker configuration:
   "mcpServers": {
     "loki-mcp-server": {
       "command": "docker",
-      "args": ["run", "--rm", "-i", "-e", "LOKI_URL=http://host.docker.internal:3100", "loki-mcp-server:latest"]
+      "args": ["run", "--rm", "-i", 
+               "-e", "LOKI_URL=http://host.docker.internal:3100", 
+               "-e", "LOKI_ORG_ID=your-default-org-id",
+               "-e", "LOKI_USERNAME=your-username",
+               "-e", "LOKI_PASSWORD=your-password",
+               "-e", "LOKI_TOKEN=your-bearer-token",
+               "loki-mcp-server:latest"]
     }
   }
 }
@@ -369,3 +414,4 @@ The tests specifically verify:
 - ✅ Multiple timestamp formats work correctly
 - ✅ Invalid timestamps have proper fallback behavior
 - ✅ Integration with real Loki instances
+
