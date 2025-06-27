@@ -5,13 +5,13 @@ services:
       dockerfile: Dockerfile
     image: loki-mcp-server:latest
     container_name: loki-mcp-server
-    # Expose SSE port
+    # Expose unified MCP server port
     ports:
-      - "8081:8080"
+      - "8080:8080"
     # If you need to pass environment variables
     environment:
       - LOKI_URL=http://loki:3100
-      - SSE_PORT=8080
+      - PORT=8080
     depends_on:
       loki:
         condition: service_healthy

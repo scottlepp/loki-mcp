@@ -30,30 +30,44 @@ func main() {
 	lokiQueryTool := handlers.NewLokiQueryTool()
 	s.AddTool(lokiQueryTool, handlers.HandleLokiQuery)
 
-	// Get SSE port from environment variable or use default
-	ssePort := os.Getenv("SSE_PORT")
-	if ssePort == "" {
-		ssePort = "8080"
+	// Get port from environment variable or use default
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
 	}
 
-	// Create SSE server for HTTP/SSE connections
+	// Create SSE server for legacy SSE connections
 	sseServer := server.NewSSEServer(s,
 		server.WithSSEEndpoint("/sse"),
 		server.WithMessageEndpoint("/mcp"),
 	)
 
+	// Create Streamable HTTP server
+	streamableServer := server.NewStreamableHTTPServer(s)
+
+	// Create a multiplexer to handle both protocols on the same port
+	mux := http.NewServeMux()
+
+	// Register SSE endpoints (legacy support)
+	mux.Handle("/sse", sseServer) // SSE event stream
+	mux.Handle("/mcp", sseServer) // SSE message endpoint
+
+	// Register Streamable HTTP endpoint
+	mux.Handle("/stream", streamableServer) // Streamable HTTP endpoint
+
 	// Create a channel to handle shutdown signals
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
-	// Start HTTP server in a goroutine
+	// Start unified HTTP server
 	go func() {
-		addr := fmt.Sprintf(":%s", ssePort)
-		log.Printf("Starting SSE server on http://localhost%s", addr)
-		log.Printf("SSE Endpoint: http://localhost%s/sse", addr)
-		log.Printf("MCP Endpoint: http://localhost%s/mcp", addr)
+		addr := fmt.Sprintf(":%s", port)
+		log.Printf("Starting unified MCP server on http://localhost%s", addr)
+		log.Printf("SSE Endpoint (legacy): http://localhost%s/sse", addr)
+		log.Printf("SSE Message Endpoint: http://localhost%s/mcp", addr)
+		log.Printf("Streamable HTTP Endpoint: http://localhost%s/stream", addr)
 
-		if err := http.ListenAndServe(addr, sseServer); err != nil && err != http.ErrServerClosed {
+		if err := http.ListenAndServe(addr, mux); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("HTTP server error: %v", err)
 		}
 	}()

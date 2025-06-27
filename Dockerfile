@@ -22,7 +22,7 @@ WORKDIR /app
 # Copy the binary from the builder stage
 COPY --from=builder /app/loki-mcp-server .
 
-# Expose the default port for SSE server
+# Expose port for unified MCP server (both SSE and Streamable HTTP)
 EXPOSE 8080
 
 # Set the entry point
