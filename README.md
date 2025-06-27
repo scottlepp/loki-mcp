@@ -28,7 +28,7 @@ Or run directly with Go:
 go run ./cmd/server
 ```
 
-The server communicates using stdin/stdout following the Model Context Protocol (MCP). This makes it suitable for use with Claude Desktop and other MCP-compatible clients. It does not run as an HTTP server on a port.
+The server communicates using stdin/stdout and SSE following the Model Context Protocol (MCP). This makes it suitable for use with Claude Desktop and other MCP-compatible clients.
 
 ## Project Structure
 
