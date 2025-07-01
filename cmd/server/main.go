@@ -30,6 +30,14 @@ func main() {
 	lokiQueryTool := handlers.NewLokiQueryTool()
 	s.AddTool(lokiQueryTool, handlers.HandleLokiQuery)
 
+	// Add Loki label names tool
+	lokiLabelNamesTool := handlers.NewLokiLabelNamesTool()
+	s.AddTool(lokiLabelNamesTool, handlers.HandleLokiLabelNames)
+
+	// Add Loki label values tool
+	lokiLabelValuesTool := handlers.NewLokiLabelValuesTool()
+	s.AddTool(lokiLabelValuesTool, handlers.HandleLokiLabelValues)
+
 	// Get port from environment variable or use default
 	port := os.Getenv("PORT")
 	if port == "" {

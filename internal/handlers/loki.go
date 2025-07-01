@@ -60,6 +60,20 @@ const EnvLokiToken = "LOKI_TOKEN"
 // Default Loki URL when environment variable is not set
 const DefaultLokiURL = "http://localhost:3100"
 
+// LokiLabelsResult represents the structure of Loki label names response
+type LokiLabelsResult struct {
+	Status string   `json:"status"`
+	Data   []string `json:"data"`
+	Error  string   `json:"error,omitempty"`
+}
+
+// LokiLabelValuesResult represents the structure of Loki label values response
+type LokiLabelValuesResult struct {
+	Status string   `json:"status"`
+	Data   []string `json:"data"`
+	Error  string   `json:"error,omitempty"`
+}
+
 // NewLokiQueryTool creates and returns a tool for querying Grafana Loki
 func NewLokiQueryTool() mcp.Tool {
 	// Get Loki URL from environment variable or use default
@@ -383,6 +397,459 @@ func formatLokiResults(result *LokiResult) (string, error) {
 			}
 		}
 		output += "\n"
+	}
+
+	return output, nil
+}
+
+// NewLokiLabelNamesTool creates and returns a tool for getting all label names from Grafana Loki
+func NewLokiLabelNamesTool() mcp.Tool {
+	// Get Loki URL from environment variable or use default
+	lokiURL := os.Getenv(EnvLokiURL)
+	if lokiURL == "" {
+		lokiURL = DefaultLokiURL
+	}
+
+	// Get authentication parameters from environment variables if set
+	username := os.Getenv(EnvLokiUsername)
+	password := os.Getenv(EnvLokiPassword)
+	token := os.Getenv(EnvLokiToken)
+	orgID := os.Getenv(EnvLokiOrgID)
+
+	return mcp.NewTool("loki_label_names",
+		mcp.WithDescription("Get all label names from Grafana Loki"),
+		mcp.WithString("url",
+			mcp.Description(fmt.Sprintf("Loki server URL (default: %s from %s env var)", lokiURL, EnvLokiURL)),
+			mcp.DefaultString(lokiURL),
+		),
+		mcp.WithString("username",
+			mcp.Description(fmt.Sprintf("Username for basic authentication (default: %s from %s env var)", username, EnvLokiUsername)),
+		),
+		mcp.WithString("password",
+			mcp.Description(fmt.Sprintf("Password for basic authentication (default: %s from %s env var)", password, EnvLokiPassword)),
+		),
+		mcp.WithString("token",
+			mcp.Description(fmt.Sprintf("Bearer token for authentication (default: %s from %s env var)", token, EnvLokiToken)),
+		),
+		mcp.WithString("start",
+			mcp.Description("Start time for the query (default: 1h ago)"),
+		),
+		mcp.WithString("end",
+			mcp.Description("End time for the query (default: now)"),
+		),
+		mcp.WithString("org",
+			mcp.Description(fmt.Sprintf("Organization ID for the query (default: %s from %s env var)", orgID, EnvLokiOrgID)),
+		),
+	)
+}
+
+// NewLokiLabelValuesTool creates and returns a tool for getting values for a specific label from Grafana Loki
+func NewLokiLabelValuesTool() mcp.Tool {
+	// Get Loki URL from environment variable or use default
+	lokiURL := os.Getenv(EnvLokiURL)
+	if lokiURL == "" {
+		lokiURL = DefaultLokiURL
+	}
+
+	// Get authentication parameters from environment variables if set
+	username := os.Getenv(EnvLokiUsername)
+	password := os.Getenv(EnvLokiPassword)
+	token := os.Getenv(EnvLokiToken)
+	orgID := os.Getenv(EnvLokiOrgID)
+
+	return mcp.NewTool("loki_label_values",
+		mcp.WithDescription("Get all values for a specific label from Grafana Loki"),
+		mcp.WithString("label",
+			mcp.Required(),
+			mcp.Description("Label name to get values for"),
+		),
+		mcp.WithString("url",
+			mcp.Description(fmt.Sprintf("Loki server URL (default: %s from %s env var)", lokiURL, EnvLokiURL)),
+			mcp.DefaultString(lokiURL),
+		),
+		mcp.WithString("username",
+			mcp.Description(fmt.Sprintf("Username for basic authentication (default: %s from %s env var)", username, EnvLokiUsername)),
+		),
+		mcp.WithString("password",
+			mcp.Description(fmt.Sprintf("Password for basic authentication (default: %s from %s env var)", password, EnvLokiPassword)),
+		),
+		mcp.WithString("token",
+			mcp.Description(fmt.Sprintf("Bearer token for authentication (default: %s from %s env var)", token, EnvLokiToken)),
+		),
+		mcp.WithString("start",
+			mcp.Description("Start time for the query (default: 1h ago)"),
+		),
+		mcp.WithString("end",
+			mcp.Description("End time for the query (default: now)"),
+		),
+		mcp.WithString("org",
+			mcp.Description(fmt.Sprintf("Organization ID for the query (default: %s from %s env var)", orgID, EnvLokiOrgID)),
+		),
+	)
+}
+
+// HandleLokiLabelNames handles Loki label names tool requests
+func HandleLokiLabelNames(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// Extract parameters
+	args := request.GetArguments()
+
+	// Get Loki URL from request arguments, if not present check environment
+	var lokiURL string
+	if urlArg, ok := args["url"].(string); ok && urlArg != "" {
+		lokiURL = urlArg
+	} else {
+		// Fallback to environment variable
+		lokiURL = os.Getenv(EnvLokiURL)
+		if lokiURL == "" {
+			lokiURL = DefaultLokiURL
+		}
+	}
+
+	// Extract authentication parameters
+	var username, password, token, orgID string
+	if usernameArg, ok := args["username"].(string); ok && usernameArg != "" {
+		username = usernameArg
+	} else {
+		username = os.Getenv(EnvLokiUsername)
+	}
+	if passwordArg, ok := args["password"].(string); ok && passwordArg != "" {
+		password = passwordArg
+	} else {
+		password = os.Getenv(EnvLokiPassword)
+	}
+	if tokenArg, ok := args["token"].(string); ok && tokenArg != "" {
+		token = tokenArg
+	} else {
+		token = os.Getenv(EnvLokiToken)
+	}
+	if orgIDArg, ok := args["org"].(string); ok && orgIDArg != "" {
+		orgID = orgIDArg
+	} else {
+		orgID = os.Getenv(EnvLokiOrgID)
+	}
+
+	// Set defaults for optional parameters
+	start := time.Now().Add(-1 * time.Hour).Unix()
+	end := time.Now().Unix()
+
+	// Override defaults if parameters are provided
+	if startStr, ok := args["start"].(string); ok && startStr != "" {
+		startTime, err := parseTime(startStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid start time: %v", err)
+		}
+		start = startTime.Unix()
+	}
+
+	if endStr, ok := args["end"].(string); ok && endStr != "" {
+		endTime, err := parseTime(endStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid end time: %v", err)
+		}
+		end = endTime.Unix()
+	}
+
+	// Build labels URL
+	labelsURL, err := buildLokiLabelsURL(lokiURL, start, end)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build labels URL: %v", err)
+	}
+
+	// Execute labels request
+	result, err := executeLokiLabelsQuery(ctx, labelsURL, username, password, token, orgID)
+	if err != nil {
+		return nil, fmt.Errorf("labels query execution failed: %v", err)
+	}
+
+	// Format results
+	formattedResult, err := formatLokiLabelsResults(result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to format results: %v", err)
+	}
+
+	return mcp.NewToolResultText(formattedResult), nil
+}
+
+// HandleLokiLabelValues handles Loki label values tool requests
+func HandleLokiLabelValues(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// Extract parameters
+	args := request.GetArguments()
+	labelName := args["label"].(string)
+
+	// Get Loki URL from request arguments, if not present check environment
+	var lokiURL string
+	if urlArg, ok := args["url"].(string); ok && urlArg != "" {
+		lokiURL = urlArg
+	} else {
+		// Fallback to environment variable
+		lokiURL = os.Getenv(EnvLokiURL)
+		if lokiURL == "" {
+			lokiURL = DefaultLokiURL
+		}
+	}
+
+	// Extract authentication parameters
+	var username, password, token, orgID string
+	if usernameArg, ok := args["username"].(string); ok && usernameArg != "" {
+		username = usernameArg
+	} else {
+		username = os.Getenv(EnvLokiUsername)
+	}
+	if passwordArg, ok := args["password"].(string); ok && passwordArg != "" {
+		password = passwordArg
+	} else {
+		password = os.Getenv(EnvLokiPassword)
+	}
+	if tokenArg, ok := args["token"].(string); ok && tokenArg != "" {
+		token = tokenArg
+	} else {
+		token = os.Getenv(EnvLokiToken)
+	}
+	if orgIDArg, ok := args["org"].(string); ok && orgIDArg != "" {
+		orgID = orgIDArg
+	} else {
+		orgID = os.Getenv(EnvLokiOrgID)
+	}
+
+	// Set defaults for optional parameters
+	start := time.Now().Add(-1 * time.Hour).Unix()
+	end := time.Now().Unix()
+
+	// Override defaults if parameters are provided
+	if startStr, ok := args["start"].(string); ok && startStr != "" {
+		startTime, err := parseTime(startStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid start time: %v", err)
+		}
+		start = startTime.Unix()
+	}
+
+	if endStr, ok := args["end"].(string); ok && endStr != "" {
+		endTime, err := parseTime(endStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid end time: %v", err)
+		}
+		end = endTime.Unix()
+	}
+
+	// Build label values URL
+	labelValuesURL, err := buildLokiLabelValuesURL(lokiURL, labelName, start, end)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build label values URL: %v", err)
+	}
+
+	// Execute label values request
+	result, err := executeLokiLabelValuesQuery(ctx, labelValuesURL, username, password, token, orgID)
+	if err != nil {
+		return nil, fmt.Errorf("label values query execution failed: %v", err)
+	}
+
+	// Format results
+	formattedResult, err := formatLokiLabelValuesResults(labelName, result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to format results: %v", err)
+	}
+
+	return mcp.NewToolResultText(formattedResult), nil
+}
+
+// buildLokiLabelsURL constructs the Loki labels URL
+func buildLokiLabelsURL(baseURL string, start, end int64) (string, error) {
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		return "", err
+	}
+
+	// Add path for Loki labels API
+	if !strings.Contains(u.Path, "loki/api/v1") {
+		if u.Path == "" || u.Path == "/" {
+			u.Path = "/loki/api/v1/labels"
+		} else {
+			u.Path = fmt.Sprintf("%s/loki/api/v1/labels", u.Path)
+		}
+	} else {
+		// If path already contains loki/api/v1, just append labels if not present
+		if !strings.HasSuffix(u.Path, "labels") {
+			u.Path = fmt.Sprintf("%s/labels", u.Path)
+		}
+	}
+
+	// Add query parameters
+	q := u.Query()
+	q.Set("start", fmt.Sprintf("%d", start))
+	q.Set("end", fmt.Sprintf("%d", end))
+	u.RawQuery = q.Encode()
+
+	return u.String(), nil
+}
+
+// buildLokiLabelValuesURL constructs the Loki label values URL
+func buildLokiLabelValuesURL(baseURL, labelName string, start, end int64) (string, error) {
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		return "", err
+	}
+
+	// Add path for Loki label values API
+	if !strings.Contains(u.Path, "loki/api/v1") {
+		if u.Path == "" || u.Path == "/" {
+			u.Path = fmt.Sprintf("/loki/api/v1/label/%s/values", url.PathEscape(labelName))
+		} else {
+			u.Path = fmt.Sprintf("%s/loki/api/v1/label/%s/values", u.Path, url.PathEscape(labelName))
+		}
+	} else {
+		// If path already contains loki/api/v1, just append label values path
+		if !strings.Contains(u.Path, "/label/") {
+			u.Path = fmt.Sprintf("%s/label/%s/values", u.Path, url.PathEscape(labelName))
+		}
+	}
+
+	// Add query parameters
+	q := u.Query()
+	q.Set("start", fmt.Sprintf("%d", start))
+	q.Set("end", fmt.Sprintf("%d", end))
+	u.RawQuery = q.Encode()
+
+	return u.String(), nil
+}
+
+// executeLokiLabelsQuery sends the HTTP request to Loki labels endpoint
+func executeLokiLabelsQuery(ctx context.Context, queryURL string, username, password, token, orgID string) (*LokiLabelsResult, error) {
+	// Create HTTP request
+	req, err := http.NewRequestWithContext(ctx, "GET", queryURL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// Add authentication if provided
+	if token != "" {
+		req.Header.Add("Authorization", "Bearer "+token)
+	} else if username != "" || password != "" {
+		req.SetBasicAuth(username, password)
+	}
+
+	// Add orgid if provided
+	if orgID != "" {
+		req.Header.Add("X-Scope-OrgID", orgID)
+	}
+
+	// Execute request
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	// Read response
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check for HTTP errors
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP error: %d - %s", resp.StatusCode, string(body))
+	}
+
+	// Parse JSON response
+	var result LokiLabelsResult
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, err
+	}
+
+	// Check for Loki errors
+	if result.Status == "error" {
+		return nil, fmt.Errorf("loki error: %s", result.Error)
+	}
+
+	return &result, nil
+}
+
+// executeLokiLabelValuesQuery sends the HTTP request to Loki label values endpoint
+func executeLokiLabelValuesQuery(ctx context.Context, queryURL string, username, password, token, orgID string) (*LokiLabelValuesResult, error) {
+	// Create HTTP request
+	req, err := http.NewRequestWithContext(ctx, "GET", queryURL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// Add authentication if provided
+	if token != "" {
+		req.Header.Add("Authorization", "Bearer "+token)
+	} else if username != "" || password != "" {
+		req.SetBasicAuth(username, password)
+	}
+
+	// Add orgid if provided
+	if orgID != "" {
+		req.Header.Add("X-Scope-OrgID", orgID)
+	}
+
+	// Execute request
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	// Read response
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check for HTTP errors
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP error: %d - %s", resp.StatusCode, string(body))
+	}
+
+	// Parse JSON response
+	var result LokiLabelValuesResult
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, err
+	}
+
+	// Check for Loki errors
+	if result.Status == "error" {
+		return nil, fmt.Errorf("loki error: %s", result.Error)
+	}
+
+	return &result, nil
+}
+
+// formatLokiLabelsResults formats the Loki labels results into a readable string
+func formatLokiLabelsResults(result *LokiLabelsResult) (string, error) {
+	if len(result.Data) == 0 {
+		return "No labels found", nil
+	}
+
+	var output string
+	output = fmt.Sprintf("Found %d labels:\n\n", len(result.Data))
+
+	for i, label := range result.Data {
+		output += fmt.Sprintf("%d. %s\n", i+1, label)
+	}
+
+	return output, nil
+}
+
+// formatLokiLabelValuesResults formats the Loki label values results into a readable string
+func formatLokiLabelValuesResults(labelName string, result *LokiLabelValuesResult) (string, error) {
+	if len(result.Data) == 0 {
+		return fmt.Sprintf("No values found for label '%s'", labelName), nil
+	}
+
+	var output string
+	output = fmt.Sprintf("Found %d values for label '%s':\n\n", len(result.Data), labelName)
+
+	for i, value := range result.Data {
+		output += fmt.Sprintf("%d. %s\n", i+1, value)
 	}
 
 	return output, nil
