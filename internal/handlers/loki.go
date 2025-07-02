@@ -121,6 +121,10 @@ func NewLokiQueryTool() mcp.Tool {
 		mcp.WithString("org",
 			mcp.Description(fmt.Sprintf("Organization ID for the query (default: %s from %s env var)", orgID, EnvLokiOrgID)),
 		),
+		mcp.WithString("format",
+			mcp.Description("Output format: raw, json, or text (default: raw)"),
+			mcp.DefaultString("raw"),
+		),
 	)
 }
 
@@ -195,6 +199,12 @@ func HandleLokiQuery(ctx context.Context, request mcp.CallToolRequest) (*mcp.Cal
 		limit = int(limitVal)
 	}
 
+	// Extract format parameter
+	format := "raw" // default
+	if formatArg, ok := args["format"].(string); ok && formatArg != "" {
+		format = formatArg
+	}
+
 	// Build query URL
 	queryURL, err := buildLokiQueryURL(lokiURL, queryString, start, end, limit)
 	if err != nil {
@@ -208,7 +218,7 @@ func HandleLokiQuery(ctx context.Context, request mcp.CallToolRequest) (*mcp.Cal
 	}
 
 	// Format results
-	formattedResult, err := formatLokiResults(result)
+	formattedResult, err := formatLokiResults(result, format)
 	if err != nil {
 		return nil, fmt.Errorf("failed to format results: %v", err)
 	}
@@ -356,50 +366,102 @@ func executeLokiQuery(ctx context.Context, queryURL string, username, password, 
 }
 
 // formatLokiResults formats the Loki query results into a readable string
-func formatLokiResults(result *LokiResult) (string, error) {
+func formatLokiResults(result *LokiResult, format string) (string, error) {
 	if len(result.Data.Result) == 0 {
-		return "No logs found matching the query", nil
+		switch format {
+		case "json":
+			return "{\"message\": \"No logs found matching the query\"}", nil
+		default:
+			return "No logs found matching the query", nil
+		}
 	}
 
-	var output string
-	output = fmt.Sprintf("Found %d streams:\n\n", len(result.Data.Result))
-
-	for i, entry := range result.Data.Result {
-		// Format stream labels
-		streamInfo := "Stream "
-		if len(entry.Stream) > 0 {
-			streamInfo += "("
-			first := true
-			for k, v := range entry.Stream {
-				if !first {
-					streamInfo += ", "
-				}
-				streamInfo += fmt.Sprintf("%s=%s", k, v)
-				first = false
-			}
-			streamInfo += ")"
+	switch format {
+	case "json":
+		// Return raw JSON response
+		jsonBytes, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			return "", fmt.Errorf("failed to marshal JSON: %v", err)
 		}
+		return string(jsonBytes), nil
 
-		output += fmt.Sprintf("%s %d:\n", streamInfo, i+1)
+	case "raw":
+		// Return raw log lines with timestamps and labels in simple format
+		var output string
+		for _, entry := range result.Data.Result {
+			// Build labels string
+			var labels string
+			if len(entry.Stream) > 0 {
+				labelParts := make([]string, 0, len(entry.Stream))
+				for k, v := range entry.Stream {
+					labelParts = append(labelParts, fmt.Sprintf("%s=%s", k, v))
+				}
+				labels = "{" + strings.Join(labelParts, ",") + "} "
+			}
 
-		// Format log entries
-		for _, val := range entry.Values {
-			if len(val) >= 2 {
-				// Parse timestamp
-				ts, err := strconv.ParseFloat(val[0], 64)
-				if err == nil {
-					// Convert to time - Loki returns timestamps in nanoseconds already
-					timestamp := time.Unix(0, int64(ts))
-					output += fmt.Sprintf("[%s] %s\n", timestamp.Format(time.RFC3339), val[1])
-				} else {
-					output += fmt.Sprintf("[%s] %s\n", val[0], val[1])
+			for _, val := range entry.Values {
+				if len(val) >= 2 {
+					// Parse timestamp and convert to readable format
+					ts, err := strconv.ParseFloat(val[0], 64)
+					var timestamp string
+					if err == nil {
+						// Convert to time - Loki returns timestamps in nanoseconds
+						t := time.Unix(0, int64(ts))
+						timestamp = t.Format(time.RFC3339)
+					} else {
+						timestamp = val[0]
+					}
+
+					output += fmt.Sprintf("%s %s%s\n", timestamp, labels, val[1])
 				}
 			}
 		}
-		output += "\n"
+		return output, nil
+
+	case "text":
+		// Return formatted text with timestamps and stream info (original behavior)
+		var output string
+		output = fmt.Sprintf("Found %d streams:\n\n", len(result.Data.Result))
+
+		for i, entry := range result.Data.Result {
+			// Format stream labels
+			streamInfo := "Stream "
+			if len(entry.Stream) > 0 {
+				streamInfo += "("
+				first := true
+				for k, v := range entry.Stream {
+					if !first {
+						streamInfo += ", "
+					}
+					streamInfo += fmt.Sprintf("%s=%s", k, v)
+					first = false
+				}
+				streamInfo += ")"
+			}
+
+			output += fmt.Sprintf("%s %d:\n", streamInfo, i+1)
+
+			// Format log entries
+			for _, val := range entry.Values {
+				if len(val) >= 2 {
+					// Parse timestamp
+					ts, err := strconv.ParseFloat(val[0], 64)
+					if err == nil {
+						// Convert to time - Loki returns timestamps in nanoseconds already
+						timestamp := time.Unix(0, int64(ts))
+						output += fmt.Sprintf("[%s] %s\n", timestamp.Format(time.RFC3339), val[1])
+					} else {
+						output += fmt.Sprintf("[%s] %s\n", val[0], val[1])
+					}
+				}
+			}
+			output += "\n"
+		}
+		return output, nil
+
+	default:
+		return "", fmt.Errorf("unsupported format: %s. Supported formats: raw, json, text", format)
 	}
-
-	return output, nil
 }
 
 // NewLokiLabelNamesTool creates and returns a tool for getting all label names from Grafana Loki
@@ -439,6 +501,10 @@ func NewLokiLabelNamesTool() mcp.Tool {
 		),
 		mcp.WithString("org",
 			mcp.Description(fmt.Sprintf("Organization ID for the query (default: %s from %s env var)", orgID, EnvLokiOrgID)),
+		),
+		mcp.WithString("format",
+			mcp.Description("Output format: raw, json, or text (default: raw)"),
+			mcp.DefaultString("raw"),
 		),
 	)
 }
@@ -484,6 +550,10 @@ func NewLokiLabelValuesTool() mcp.Tool {
 		),
 		mcp.WithString("org",
 			mcp.Description(fmt.Sprintf("Organization ID for the query (default: %s from %s env var)", orgID, EnvLokiOrgID)),
+		),
+		mcp.WithString("format",
+			mcp.Description("Output format: raw, json, or text (default: raw)"),
+			mcp.DefaultString("raw"),
 		),
 	)
 }
@@ -549,6 +619,12 @@ func HandleLokiLabelNames(ctx context.Context, request mcp.CallToolRequest) (*mc
 		end = endTime.Unix()
 	}
 
+	// Extract format parameter
+	format := "raw" // default
+	if formatArg, ok := args["format"].(string); ok && formatArg != "" {
+		format = formatArg
+	}
+
 	// Build labels URL
 	labelsURL, err := buildLokiLabelsURL(lokiURL, start, end)
 	if err != nil {
@@ -562,7 +638,7 @@ func HandleLokiLabelNames(ctx context.Context, request mcp.CallToolRequest) (*mc
 	}
 
 	// Format results
-	formattedResult, err := formatLokiLabelsResults(result)
+	formattedResult, err := formatLokiLabelsResults(result, format)
 	if err != nil {
 		return nil, fmt.Errorf("failed to format results: %v", err)
 	}
@@ -632,6 +708,12 @@ func HandleLokiLabelValues(ctx context.Context, request mcp.CallToolRequest) (*m
 		end = endTime.Unix()
 	}
 
+	// Extract format parameter
+	format := "raw" // default
+	if formatArg, ok := args["format"].(string); ok && formatArg != "" {
+		format = formatArg
+	}
+
 	// Build label values URL
 	labelValuesURL, err := buildLokiLabelValuesURL(lokiURL, labelName, start, end)
 	if err != nil {
@@ -645,7 +727,7 @@ func HandleLokiLabelValues(ctx context.Context, request mcp.CallToolRequest) (*m
 	}
 
 	// Format results
-	formattedResult, err := formatLokiLabelValuesResults(labelName, result)
+	formattedResult, err := formatLokiLabelValuesResults(labelName, result, format)
 	if err != nil {
 		return nil, fmt.Errorf("failed to format results: %v", err)
 	}
@@ -824,33 +906,87 @@ func executeLokiLabelValuesQuery(ctx context.Context, queryURL string, username,
 }
 
 // formatLokiLabelsResults formats the Loki labels results into a readable string
-func formatLokiLabelsResults(result *LokiLabelsResult) (string, error) {
+func formatLokiLabelsResults(result *LokiLabelsResult, format string) (string, error) {
 	if len(result.Data) == 0 {
-		return "No labels found", nil
+		switch format {
+		case "json":
+			return "{\"message\": \"No labels found\"}", nil
+		default:
+			return "No labels found", nil
+		}
 	}
 
-	var output string
-	output = fmt.Sprintf("Found %d labels:\n\n", len(result.Data))
+	switch format {
+	case "json":
+		// Return raw JSON response
+		jsonBytes, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			return "", fmt.Errorf("failed to marshal JSON: %v", err)
+		}
+		return string(jsonBytes), nil
 
-	for i, label := range result.Data {
-		output += fmt.Sprintf("%d. %s\n", i+1, label)
+	case "raw":
+		// Return raw label names only, one per line
+		var output string
+		for _, label := range result.Data {
+			output += label + "\n"
+		}
+		return output, nil
+
+	case "text":
+		// Return formatted text with numbering (original behavior)
+		var output string
+		output = fmt.Sprintf("Found %d labels:\n\n", len(result.Data))
+
+		for i, label := range result.Data {
+			output += fmt.Sprintf("%d. %s\n", i+1, label)
+		}
+		return output, nil
+
+	default:
+		return "", fmt.Errorf("unsupported format: %s. Supported formats: raw, json, text", format)
 	}
-
-	return output, nil
 }
 
 // formatLokiLabelValuesResults formats the Loki label values results into a readable string
-func formatLokiLabelValuesResults(labelName string, result *LokiLabelValuesResult) (string, error) {
+func formatLokiLabelValuesResults(labelName string, result *LokiLabelValuesResult, format string) (string, error) {
 	if len(result.Data) == 0 {
-		return fmt.Sprintf("No values found for label '%s'", labelName), nil
+		switch format {
+		case "json":
+			return fmt.Sprintf("{\"message\": \"No values found for label '%s'\"}", labelName), nil
+		default:
+			return fmt.Sprintf("No values found for label '%s'", labelName), nil
+		}
 	}
 
-	var output string
-	output = fmt.Sprintf("Found %d values for label '%s':\n\n", len(result.Data), labelName)
+	switch format {
+	case "json":
+		// Return raw JSON response
+		jsonBytes, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			return "", fmt.Errorf("failed to marshal JSON: %v", err)
+		}
+		return string(jsonBytes), nil
 
-	for i, value := range result.Data {
-		output += fmt.Sprintf("%d. %s\n", i+1, value)
+	case "raw":
+		// Return raw label values only, one per line
+		var output string
+		for _, value := range result.Data {
+			output += value + "\n"
+		}
+		return output, nil
+
+	case "text":
+		// Return formatted text with numbering (original behavior)
+		var output string
+		output = fmt.Sprintf("Found %d values for label '%s':\n\n", len(result.Data), labelName)
+
+		for i, value := range result.Data {
+			output += fmt.Sprintf("%d. %s\n", i+1, value)
+		}
+		return output, nil
+
+	default:
+		return "", fmt.Errorf("unsupported format: %s. Supported formats: raw, json, text", format)
 	}
-
-	return output, nil
 }
