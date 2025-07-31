@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -57,6 +59,18 @@ const EnvLokiPassword = "LOKI_PASSWORD"
 // Environment variable name for Loki Token
 const EnvLokiToken = "LOKI_TOKEN"
 
+// Environment variable name for Loki client certificate file
+const EnvLokiClientCert = "LOKI_CLIENT_CERT"
+
+// Environment variable name for Loki client key file
+const EnvLokiClientKey = "LOKI_CLIENT_KEY"
+
+// Environment variable name for Loki CA certificate file
+const EnvLokiCACert = "LOKI_CA_CERT"
+
+// Environment variable name for TLS insecure skip verify
+const EnvLokiTLSInsecureSkipVerify = "LOKI_TLS_INSECURE_SKIP_VERIFY"
+
 // Default Loki URL when environment variable is not set
 const DefaultLokiURL = "http://localhost:3100"
 
@@ -72,6 +86,42 @@ type LokiLabelValuesResult struct {
 	Status string   `json:"status"`
 	Data   []string `json:"data"`
 	Error  string   `json:"error,omitempty"`
+}
+
+// createTLSConfig creates a TLS configuration for mTLS authentication
+func createTLSConfig(clientCertFile, clientKeyFile, caCertFile string, insecureSkipVerify bool) (*tls.Config, error) {
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: insecureSkipVerify,
+	}
+
+	// Load client certificate and key if provided
+	if clientCertFile != "" && clientKeyFile != "" {
+		cert, err := tls.LoadX509KeyPair(clientCertFile, clientKeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load client certificate: %v", err)
+		}
+		tlsConfig.Certificates = []tls.Certificate{cert}
+	}
+
+	// Load CA certificate if provided
+	if caCertFile != "" {
+		// Read the CA certificate file
+		caCert, err := os.ReadFile(caCertFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read CA certificate file: %v", err)
+		}
+
+		// Create a certificate pool and add the CA certificate
+		caCertPool := x509.NewCertPool()
+		if !caCertPool.AppendCertsFromPEM(caCert) {
+			return nil, fmt.Errorf("failed to parse CA certificate")
+		}
+
+		// Set the CA certificate pool in the TLS configuration
+		tlsConfig.RootCAs = caCertPool
+	}
+
+	return tlsConfig, nil
 }
 
 // NewLokiQueryTool creates and returns a tool for querying Grafana Loki
@@ -173,6 +223,15 @@ func HandleLokiQuery(ctx context.Context, request mcp.CallToolRequest) (*mcp.Cal
 		orgID = os.Getenv(EnvLokiOrgID)
 	}
 
+	// Extract mTLS certificate parameters from environment variables only
+	clientCert := os.Getenv(EnvLokiClientCert)
+	clientKey := os.Getenv(EnvLokiClientKey)
+	caCert := os.Getenv(EnvLokiCACert)
+
+	// Extract TLS insecure skip verify from environment variable only
+	envValue := os.Getenv(EnvLokiTLSInsecureSkipVerify)
+	tlsInsecureSkipVerify := envValue == "true"
+
 	// Set defaults for optional parameters
 	start := time.Now().Add(-1 * time.Hour).Unix()
 	end := time.Now().Unix()
@@ -212,7 +271,7 @@ func HandleLokiQuery(ctx context.Context, request mcp.CallToolRequest) (*mcp.Cal
 	}
 
 	// Execute query with authentication
-	result, err := executeLokiQuery(ctx, queryURL, username, password, token, orgID)
+	result, err := executeLokiQuery(ctx, queryURL, username, password, token, orgID, clientCert, clientKey, caCert, tlsInsecureSkipVerify)
 	if err != nil {
 		return nil, fmt.Errorf("query execution failed: %v", err)
 	}
@@ -309,7 +368,7 @@ func buildLokiQueryURL(baseURL, query string, start, end int64, limit int) (stri
 }
 
 // executeLokiQuery sends the HTTP request to Loki
-func executeLokiQuery(ctx context.Context, queryURL string, username, password, token, orgID string) (*LokiResult, error) {
+func executeLokiQuery(ctx context.Context, queryURL string, username, password, token, orgID, clientCert, clientKey, caCert string, insecureSkipVerify bool) (*LokiResult, error) {
 	// Create HTTP request
 	req, err := http.NewRequestWithContext(ctx, "GET", queryURL, nil)
 	if err != nil {
@@ -330,10 +389,25 @@ func executeLokiQuery(ctx context.Context, queryURL string, username, password, 
 		req.Header.Add("X-Scope-OrgID", orgID)
 	}
 
-	// Execute request
+	// Create HTTP client with optional TLS configuration
 	client := &http.Client{
 		Timeout: 30 * time.Second,
 	}
+
+	// Configure TLS if mTLS certificates are provided or if we need to skip verification
+	if (clientCert != "" && clientKey != "") || insecureSkipVerify {
+		tlsConfig, err := createTLSConfig(clientCert, clientKey, caCert, insecureSkipVerify)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create TLS config: %v", err)
+		}
+
+		transport := &http.Transport{
+			TLSClientConfig: tlsConfig,
+		}
+		client.Transport = transport
+	}
+
+	// Execute request
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -598,6 +672,15 @@ func HandleLokiLabelNames(ctx context.Context, request mcp.CallToolRequest) (*mc
 		orgID = os.Getenv(EnvLokiOrgID)
 	}
 
+	// Extract mTLS certificate parameters from environment variables only
+	clientCert := os.Getenv(EnvLokiClientCert)
+	clientKey := os.Getenv(EnvLokiClientKey)
+	caCert := os.Getenv(EnvLokiCACert)
+
+	// Extract TLS insecure skip verify from environment variable only
+	envValue := os.Getenv(EnvLokiTLSInsecureSkipVerify)
+	tlsInsecureSkipVerify := envValue == "true"
+
 	// Set defaults for optional parameters
 	start := time.Now().Add(-1 * time.Hour).Unix()
 	end := time.Now().Unix()
@@ -632,7 +715,7 @@ func HandleLokiLabelNames(ctx context.Context, request mcp.CallToolRequest) (*mc
 	}
 
 	// Execute labels request
-	result, err := executeLokiLabelsQuery(ctx, labelsURL, username, password, token, orgID)
+	result, err := executeLokiLabelsQuery(ctx, labelsURL, username, password, token, orgID, clientCert, clientKey, caCert, tlsInsecureSkipVerify)
 	if err != nil {
 		return nil, fmt.Errorf("labels query execution failed: %v", err)
 	}
@@ -687,6 +770,15 @@ func HandleLokiLabelValues(ctx context.Context, request mcp.CallToolRequest) (*m
 		orgID = os.Getenv(EnvLokiOrgID)
 	}
 
+	// Extract mTLS certificate parameters from environment variables only
+	clientCert := os.Getenv(EnvLokiClientCert)
+	clientKey := os.Getenv(EnvLokiClientKey)
+	caCert := os.Getenv(EnvLokiCACert)
+
+	// Extract TLS insecure skip verify from environment variable only
+	envValue := os.Getenv(EnvLokiTLSInsecureSkipVerify)
+	tlsInsecureSkipVerify := envValue == "true"
+
 	// Set defaults for optional parameters
 	start := time.Now().Add(-1 * time.Hour).Unix()
 	end := time.Now().Unix()
@@ -721,7 +813,7 @@ func HandleLokiLabelValues(ctx context.Context, request mcp.CallToolRequest) (*m
 	}
 
 	// Execute label values request
-	result, err := executeLokiLabelValuesQuery(ctx, labelValuesURL, username, password, token, orgID)
+	result, err := executeLokiLabelValuesQuery(ctx, labelValuesURL, username, password, token, orgID, clientCert, clientKey, caCert, tlsInsecureSkipVerify)
 	if err != nil {
 		return nil, fmt.Errorf("label values query execution failed: %v", err)
 	}
@@ -796,7 +888,7 @@ func buildLokiLabelValuesURL(baseURL, labelName string, start, end int64) (strin
 }
 
 // executeLokiLabelsQuery sends the HTTP request to Loki labels endpoint
-func executeLokiLabelsQuery(ctx context.Context, queryURL string, username, password, token, orgID string) (*LokiLabelsResult, error) {
+func executeLokiLabelsQuery(ctx context.Context, queryURL string, username, password, token, orgID, clientCert, clientKey, caCert string, insecureSkipVerify bool) (*LokiLabelsResult, error) {
 	// Create HTTP request
 	req, err := http.NewRequestWithContext(ctx, "GET", queryURL, nil)
 	if err != nil {
@@ -815,10 +907,25 @@ func executeLokiLabelsQuery(ctx context.Context, queryURL string, username, pass
 		req.Header.Add("X-Scope-OrgID", orgID)
 	}
 
-	// Execute request
+	// Create HTTP client with optional TLS configuration
 	client := &http.Client{
 		Timeout: 30 * time.Second,
 	}
+
+	// Configure TLS if mTLS certificates are provided or if we need to skip verification
+	if (clientCert != "" && clientKey != "") || insecureSkipVerify {
+		tlsConfig, err := createTLSConfig(clientCert, clientKey, caCert, insecureSkipVerify) // Pass false for insecureSkipVerify
+		if err != nil {
+			return nil, fmt.Errorf("failed to create TLS config: %v", err)
+		}
+
+		transport := &http.Transport{
+			TLSClientConfig: tlsConfig,
+		}
+		client.Transport = transport
+	}
+
+	// Execute request
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -851,7 +958,7 @@ func executeLokiLabelsQuery(ctx context.Context, queryURL string, username, pass
 }
 
 // executeLokiLabelValuesQuery sends the HTTP request to Loki label values endpoint
-func executeLokiLabelValuesQuery(ctx context.Context, queryURL string, username, password, token, orgID string) (*LokiLabelValuesResult, error) {
+func executeLokiLabelValuesQuery(ctx context.Context, queryURL string, username, password, token, orgID, clientCert, clientKey, caCert string, insecureSkipVerify bool) (*LokiLabelValuesResult, error) {
 	// Create HTTP request
 	req, err := http.NewRequestWithContext(ctx, "GET", queryURL, nil)
 	if err != nil {
@@ -870,10 +977,25 @@ func executeLokiLabelValuesQuery(ctx context.Context, queryURL string, username,
 		req.Header.Add("X-Scope-OrgID", orgID)
 	}
 
-	// Execute request
+	// Create HTTP client with optional TLS configuration
 	client := &http.Client{
 		Timeout: 30 * time.Second,
 	}
+
+	// Configure TLS if mTLS certificates are provided
+	if (clientCert != "" && clientKey != "") || insecureSkipVerify {
+		tlsConfig, err := createTLSConfig(clientCert, clientKey, caCert, insecureSkipVerify) // Pass false for insecureSkipVerify
+		if err != nil {
+			return nil, fmt.Errorf("failed to create TLS config: %v", err)
+		}
+
+		transport := &http.Transport{
+			TLSClientConfig: tlsConfig,
+		}
+		client.Transport = transport
+	}
+
+	// Execute request
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err

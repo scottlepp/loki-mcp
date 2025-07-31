@@ -73,7 +73,24 @@ The Loki query tool supports the following environment variables:
 - `LOKI_PASSWORD`: Default password for basic authentication if not specified in the request
 - `LOKI_TOKEN`: Default bearer token for authentication if not specified in the request
 
-**Security Note**: When using authentication environment variables, be careful not to expose sensitive credentials in logs or configuration files. Consider using token-based authentication over username/password when possible.
+##### mTLS Authentication
+
+For environments requiring mutual TLS (mTLS) authentication:
+
+- `LOKI_CLIENT_CERT`: Path to client certificate file for mTLS authentication
+- `LOKI_CLIENT_KEY`: Path to client key file for mTLS authentication
+- `LOKI_CA_CERT`: Path to CA certificate file for mTLS authentication
+
+##### TLS Configuration
+
+For TLS connection configuration:
+
+- `LOKI_TLS_INSECURE_SKIP_VERIFY`: Skip TLS certificate verification (set to "true" to disable certificate validation). **Use with caution - only for development/testing environments with self-signed certificates.**
+
+**Security Notes**:
+- When using authentication environment variables, be careful not to expose sensitive credentials in logs or configuration files. Consider using token-based authentication over username/password when possible.
+- mTLS certificates should be properly secured and rotated regularly.
+- Only use `LOKI_TLS_INSECURE_SKIP_VERIFY=true` in development environments or when dealing with self-signed certificates. This setting is controlled at the deployment level and cannot be overridden by the LLM for security reasons.
 
 ### Testing the MCP Server
 
@@ -105,6 +122,18 @@ export LOKI_PASSWORD="password"
 # Using environment variables with bearer token:
 export LOKI_URL="http://localhost:3100"
 export LOKI_TOKEN="your-bearer-token"
+./loki-mcp-client loki_query "{job=\"varlogs\"}"
+
+# Using environment variables with mTLS authentication:
+export LOKI_URL="https://secure-loki.example.com"
+export LOKI_CLIENT_CERT="/path/to/client.crt"
+export LOKI_CLIENT_KEY="/path/to/client.key"
+export LOKI_CA_CERT="/path/to/ca.crt"
+./loki-mcp-client loki_query "{job=\"varlogs\"}"
+
+# Using environment variables with TLS skip verify (development only):
+export LOKI_URL="https://dev-loki.example.com"
+export LOKI_TLS_INSECURE_SKIP_VERIFY="true"
 ./loki-mcp-client loki_query "{job=\"varlogs\"}"
 
 # Using all environment variables together:
@@ -302,7 +331,11 @@ Or create your own configuration:
         "LOKI_ORG_ID": "your-default-org-id",
         "LOKI_USERNAME": "your-username",
         "LOKI_PASSWORD": "your-password",
-        "LOKI_TOKEN": "your-bearer-token"
+        "LOKI_TOKEN": "your-bearer-token",
+        "LOKI_CLIENT_CERT": "/path/to/client.crt",
+        "LOKI_CLIENT_KEY": "/path/to/client.key",
+        "LOKI_CA_CERT": "/path/to/ca.crt",
+        "LOKI_TLS_INSECURE_SKIP_VERIFY": "false"
       },
       "disabled": false,
       "autoApprove": ["loki_query"]
@@ -372,6 +405,11 @@ Docker configuration:
                "-e", "LOKI_USERNAME=your-username",
                "-e", "LOKI_PASSWORD=your-password",
                "-e", "LOKI_TOKEN=your-bearer-token",
+               "-e", "LOKI_CLIENT_CERT=/certs/client.crt",
+               "-e", "LOKI_CLIENT_KEY=/certs/client.key",
+               "-e", "LOKI_CA_CERT=/certs/ca.crt",
+               "-e", "LOKI_TLS_INSECURE_SKIP_VERIFY=false",
+               "-v", "/path/to/certs:/certs:ro",
                "loki-mcp-server:latest"]
     }
   }

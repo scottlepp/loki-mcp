@@ -35,7 +35,7 @@ func TestFormatLokiResults_TimestampParsing(t *testing.T) {
 	}
 
 	// Format the results
-	output, err := formatLokiResults(result)
+	output, err := formatLokiResults(result, "raw")
 	if err != nil {
 		t.Fatalf("formatLokiResults failed: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestFormatLokiResults_MultipleTimestamps(t *testing.T) {
 		},
 	}
 
-	output, err := formatLokiResults(result)
+	output, err := formatLokiResults(result, "raw")
 	if err != nil {
 		t.Fatalf("formatLokiResults failed: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestFormatLokiResults_InvalidTimestamp(t *testing.T) {
 		},
 	}
 
-	output, err := formatLokiResults(result)
+	output, err := formatLokiResults(result, "text")
 	if err != nil {
 		t.Fatalf("formatLokiResults failed: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestFormatLokiResults_EmptyResult(t *testing.T) {
 		},
 	}
 
-	output, err := formatLokiResults(result)
+	output, err := formatLokiResults(result, "raw")
 	if err != nil {
 		t.Fatalf("formatLokiResults failed: %v", err)
 	}
@@ -180,7 +180,7 @@ func TestFormatLokiResults_RecentTimestamp(t *testing.T) {
 		},
 	}
 
-	output, err := formatLokiResults(result)
+	output, err := formatLokiResults(result, "raw")
 	if err != nil {
 		t.Fatalf("formatLokiResults failed: %v", err)
 	}
@@ -241,7 +241,7 @@ func TestFormatLokiResults_NoYear2262Bug(t *testing.T) {
 				},
 			}
 
-			output, err := formatLokiResults(result)
+			output, err := formatLokiResults(result, "raw")
 			if err != nil {
 				t.Fatalf("formatLokiResults failed: %v", err)
 			}
