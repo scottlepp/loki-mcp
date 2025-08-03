@@ -26,7 +26,7 @@ func TestFormatLokiResults_TimestampParsing(t *testing.T) {
 						"job":   "test-job",
 						"level": "info",
 					},
-					Values: [][]string{
+					Values: [][]interface{}{
 						{timestampStr, "Test log message"},
 					},
 				},
@@ -35,7 +35,7 @@ func TestFormatLokiResults_TimestampParsing(t *testing.T) {
 	}
 
 	// Format the results
-	output, err := formatLokiResults(result)
+	output, err := formatLokiResults(result, "raw")
 	if err != nil {
 		t.Fatalf("formatLokiResults failed: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestFormatLokiResults_MultipleTimestamps(t *testing.T) {
 					Stream: map[string]string{
 						"job": "test-job",
 					},
-					Values: [][]string{
+					Values: [][]interface{}{
 						{"1705312245000000000", "First log message"},  // 2024-01-15T10:30:45Z
 						{"1705312260000000000", "Second log message"}, // 2024-01-15T10:31:00Z
 						{"1705312275000000000", "Third log message"},  // 2024-01-15T10:31:15Z
@@ -83,7 +83,7 @@ func TestFormatLokiResults_MultipleTimestamps(t *testing.T) {
 		},
 	}
 
-	output, err := formatLokiResults(result)
+	output, err := formatLokiResults(result, "raw")
 	if err != nil {
 		t.Fatalf("formatLokiResults failed: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestFormatLokiResults_InvalidTimestamp(t *testing.T) {
 					Stream: map[string]string{
 						"job": "test-job",
 					},
-					Values: [][]string{
+					Values: [][]interface{}{
 						{"invalid-timestamp", "Log with invalid timestamp"},
 					},
 				},
@@ -119,14 +119,14 @@ func TestFormatLokiResults_InvalidTimestamp(t *testing.T) {
 		},
 	}
 
-	output, err := formatLokiResults(result)
+	output, err := formatLokiResults(result, "raw")
 	if err != nil {
 		t.Fatalf("formatLokiResults failed: %v", err)
 	}
 
 	// Should contain the original invalid timestamp as fallback
-	if !strings.Contains(output, "[invalid-timestamp]") {
-		t.Errorf("Expected output to contain '[invalid-timestamp]' as fallback, but got:\n%s", output)
+	if !strings.Contains(output, "invalid-timestamp") {
+		t.Errorf("Expected output to contain 'invalid-timestamp' as fallback, but got:\n%s", output)
 	}
 
 	// Should still contain the log message
@@ -145,7 +145,7 @@ func TestFormatLokiResults_EmptyResult(t *testing.T) {
 		},
 	}
 
-	output, err := formatLokiResults(result)
+	output, err := formatLokiResults(result, "raw")
 	if err != nil {
 		t.Fatalf("formatLokiResults failed: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestFormatLokiResults_RecentTimestamp(t *testing.T) {
 					Stream: map[string]string{
 						"job": "recent-test",
 					},
-					Values: [][]string{
+					Values: [][]interface{}{
 						{timestampStr, "Recent log message"},
 					},
 				},
@@ -180,7 +180,7 @@ func TestFormatLokiResults_RecentTimestamp(t *testing.T) {
 		},
 	}
 
-	output, err := formatLokiResults(result)
+	output, err := formatLokiResults(result, "raw")
 	if err != nil {
 		t.Fatalf("formatLokiResults failed: %v", err)
 	}
@@ -233,7 +233,7 @@ func TestFormatLokiResults_NoYear2262Bug(t *testing.T) {
 							Stream: map[string]string{
 								"job": "regression-test",
 							},
-							Values: [][]string{
+							Values: [][]interface{}{
 								{tc.timestampNs, "Test log message"},
 							},
 						},
@@ -241,7 +241,7 @@ func TestFormatLokiResults_NoYear2262Bug(t *testing.T) {
 				},
 			}
 
-			output, err := formatLokiResults(result)
+			output, err := formatLokiResults(result, "raw")
 			if err != nil {
 				t.Fatalf("formatLokiResults failed: %v", err)
 			}
@@ -256,5 +256,111 @@ func TestFormatLokiResults_NoYear2262Bug(t *testing.T) {
 				t.Errorf("Expected output to contain year %s, but got:\n%s", tc.expectedYear, output)
 			}
 		})
+	}
+}
+
+// TestFormatLokiResults_NumericValues tests handling of numeric values from aggregation functions
+func TestFormatLokiResults_NumericValues(t *testing.T) {
+	// This simulates a count_over_time() result which returns numeric values
+	result := &LokiResult{
+		Status: "success",
+		Data: LokiData{
+			ResultType: "matrix",
+			Result: []LokiEntry{
+				{
+					Stream: map[string]string{
+						"cluster":   "mia2",
+						"container": "ds-microservices-router",
+					},
+					Values: [][]interface{}{
+						{"1705312245", 42.0},    // timestamp as string, count as float64
+						{"1705312260", 35.0},    // timestamp as string, count as float64
+						{"1705312275", 18.0},    // timestamp as string, count as float64
+					},
+				},
+			},
+		},
+	}
+
+	output, err := formatLokiResults(result, "raw")
+	if err != nil {
+		t.Fatalf("formatLokiResults failed: %v", err)
+	}
+
+	// Should contain the numeric values as strings
+	if !strings.Contains(output, "42") {
+		t.Errorf("Expected output to contain '42', but got:\n%s", output)
+	}
+
+	if !strings.Contains(output, "35") {
+		t.Errorf("Expected output to contain '35', but got:\n%s", output)
+	}
+
+	if !strings.Contains(output, "18") {
+		t.Errorf("Expected output to contain '18', but got:\n%s", output)
+	}
+
+	// Should contain the cluster and container labels
+	if !strings.Contains(output, "cluster=mia2") {
+		t.Errorf("Expected output to contain 'cluster=mia2', but got:\n%s", output)
+	}
+
+	if !strings.Contains(output, "container=ds-microservices-router") {
+		t.Errorf("Expected output to contain 'container=ds-microservices-router', but got:\n%s", output)
+	}
+}
+
+// TestFormatLokiResults_MetricQuery tests handling of metric query responses with "metric" field
+func TestFormatLokiResults_MetricQuery(t *testing.T) {
+	result := &LokiResult{
+		Status: "success",
+		Data: LokiData{
+			ResultType: "matrix",
+			Result: []LokiEntry{
+				{
+					Metric: map[string]string{
+						"job":      "prometheus",
+						"instance": "localhost:9090",
+					},
+					Values: [][]interface{}{
+						{"1705312245", 100.0}, // timestamp in seconds, metric value
+						{"1705312260", 95.0},
+						{"1705312275", 88.0},
+					},
+				},
+			},
+		},
+	}
+
+	output, err := formatLokiResults(result, "raw")
+	if err != nil {
+		t.Fatalf("formatLokiResults failed: %v", err)
+	}
+
+	// Should contain the metric values
+	if !strings.Contains(output, "100") {
+		t.Errorf("Expected output to contain '100', but got:\n%s", output)
+	}
+
+	if !strings.Contains(output, "95") {
+		t.Errorf("Expected output to contain '95', but got:\n%s", output)
+	}
+
+	if !strings.Contains(output, "88") {
+		t.Errorf("Expected output to contain '88', but got:\n%s", output)
+	}
+
+	// Should contain the metric labels
+	if !strings.Contains(output, "job=prometheus") {
+		t.Errorf("Expected output to contain 'job=prometheus', but got:\n%s", output)
+	}
+
+	if !strings.Contains(output, "instance=localhost:9090") {
+		t.Errorf("Expected output to contain 'instance=localhost:9090', but got:\n%s", output)
+	}
+
+	// Should contain properly formatted timestamps (seconds format)
+	if !strings.Contains(output, "2024-01-") {
+		t.Errorf("Expected output to contain proper timestamp format '2024-01-', but got:\n%s", output)
 	}
 }

@@ -30,8 +30,9 @@ type LokiData struct {
 
 // LokiEntry represents a single log entry from Loki
 type LokiEntry struct {
-	Stream map[string]string `json:"stream"`
-	Values [][]string        `json:"values"` // [timestamp, log line]
+	Stream map[string]string   `json:"stream"` // For log queries
+	Metric map[string]string   `json:"metric"` // For metric queries
+	Values [][]interface{}     `json:"values"` // [timestamp, log line or numeric value]
 }
 
 // SSEEvent represents an event to be sent via SSE
@@ -346,6 +347,7 @@ func executeLokiQuery(ctx context.Context, queryURL string, username, password, 
 		return nil, err
 	}
 
+
 	// Check for HTTP errors
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("HTTP error: %d - %s", resp.StatusCode, string(body))
@@ -389,11 +391,18 @@ func formatLokiResults(result *LokiResult, format string) (string, error) {
 		// Return raw log lines with timestamps and labels in simple format
 		var output string
 		for _, entry := range result.Data.Result {
-			// Build labels string
+			// Build labels string from either stream or metric labels
 			var labels string
+			var labelMap map[string]string
 			if len(entry.Stream) > 0 {
-				labelParts := make([]string, 0, len(entry.Stream))
-				for k, v := range entry.Stream {
+				labelMap = entry.Stream
+			} else if len(entry.Metric) > 0 {
+				labelMap = entry.Metric
+			}
+			
+			if len(labelMap) > 0 {
+				labelParts := make([]string, 0, len(labelMap))
+				for k, v := range labelMap {
 					labelParts = append(labelParts, fmt.Sprintf("%s=%s", k, v))
 				}
 				labels = "{" + strings.Join(labelParts, ",") + "} "
@@ -402,17 +411,29 @@ func formatLokiResults(result *LokiResult, format string) (string, error) {
 			for _, val := range entry.Values {
 				if len(val) >= 2 {
 					// Parse timestamp and convert to readable format
-					ts, err := strconv.ParseFloat(val[0], 64)
+					timestampStr := fmt.Sprintf("%v", val[0])
+					ts, err := strconv.ParseFloat(timestampStr, 64)
 					var timestamp string
 					if err == nil {
-						// Convert to time - Loki returns timestamps in nanoseconds
-						t := time.Unix(0, int64(ts))
+						// Detect if timestamp is in seconds or nanoseconds
+						// Timestamps after year 2000 in nanoseconds are > 1e15
+						// Timestamps in seconds are typically < 1e12
+						var t time.Time
+						if ts > 1e15 {
+							// Nanoseconds (log queries)
+							t = time.Unix(0, int64(ts))
+						} else {
+							// Seconds (metric queries)
+							t = time.Unix(int64(ts), 0)
+						}
 						timestamp = t.Format(time.RFC3339)
 					} else {
-						timestamp = val[0]
+						timestamp = timestampStr
 					}
 
-					output += fmt.Sprintf("%s %s%s\n", timestamp, labels, val[1])
+					// Convert value to string (handles both log lines and numeric values)
+					value := fmt.Sprintf("%v", val[1])
+					output += fmt.Sprintf("%s %s%s\n", timestamp, labels, value)
 				}
 			}
 		}
@@ -424,12 +445,19 @@ func formatLokiResults(result *LokiResult, format string) (string, error) {
 		output = fmt.Sprintf("Found %d streams:\n\n", len(result.Data.Result))
 
 		for i, entry := range result.Data.Result {
-			// Format stream labels
+			// Format labels from either stream or metric
 			streamInfo := "Stream "
+			var labelMap map[string]string
 			if len(entry.Stream) > 0 {
+				labelMap = entry.Stream
+			} else if len(entry.Metric) > 0 {
+				labelMap = entry.Metric
+			}
+			
+			if len(labelMap) > 0 {
 				streamInfo += "("
 				first := true
-				for k, v := range entry.Stream {
+				for k, v := range labelMap {
 					if !first {
 						streamInfo += ", "
 					}
@@ -445,13 +473,23 @@ func formatLokiResults(result *LokiResult, format string) (string, error) {
 			for _, val := range entry.Values {
 				if len(val) >= 2 {
 					// Parse timestamp
-					ts, err := strconv.ParseFloat(val[0], 64)
+					timestampStr := fmt.Sprintf("%v", val[0])
+					ts, err := strconv.ParseFloat(timestampStr, 64)
 					if err == nil {
-						// Convert to time - Loki returns timestamps in nanoseconds already
-						timestamp := time.Unix(0, int64(ts))
-						output += fmt.Sprintf("[%s] %s\n", timestamp.Format(time.RFC3339), val[1])
+						// Detect if timestamp is in seconds or nanoseconds
+						var timestamp time.Time
+						if ts > 1e15 {
+							// Nanoseconds (log queries)
+							timestamp = time.Unix(0, int64(ts))
+						} else {
+							// Seconds (metric queries)
+							timestamp = time.Unix(int64(ts), 0)
+						}
+						value := fmt.Sprintf("%v", val[1])
+						output += fmt.Sprintf("[%s] %s\n", timestamp.Format(time.RFC3339), value)
 					} else {
-						output += fmt.Sprintf("[%s] %s\n", val[0], val[1])
+						value := fmt.Sprintf("%v", val[1])
+						output += fmt.Sprintf("[%s] %s\n", timestampStr, value)
 					}
 				}
 			}
